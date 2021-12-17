@@ -612,12 +612,11 @@ def main():
     opt = torch.optim.Adam(params, lr=learning_rate)
 
     if args.md_path != '':
+        map_location=torch.device('cpu')
         # try:
         if args.TRADES or args.Bag:
-            map_location=torch.device('cpu')
             tmp=torch.load(args.md_path, map_location=map_location)
         else:
-            map_location=torch.device('cpu')
             tmp=torch.load(args.md_path, map_location=map_location)['state_dict']
 
         model.load_state_dict(tmp)
@@ -717,7 +716,7 @@ def main():
                         # contrastive_clean = \
                         #     calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model)
 
-                    # torch.cuda.empty_cache()
+                    torch.cuda.empty_cache()
 
                     # contrastive_attack_loss += contrastive_attack.item() * y.size(0)
                     # contrastive_clean_loss += contrastive_clean.item() * y.size(0)
@@ -817,7 +816,7 @@ def main():
                     test_n += y.size(0)
                     # print(test_robust_ada_acc, test_robust_ada_loss)
 
-                    # torch.cuda.empty_cache()
+                    torch.cuda.empty_cache()
                     print(bs_ind)
 
                 torch.save({
@@ -834,18 +833,15 @@ def main():
 
     else:
         # SSL model has been trained, here we do the evaluation only without training.
-
+        map_location=torch.device('cpu')
         # Load the pretrained SSL model.
         if args.res18:
             # import pdb; pdb.set_trace()
             if args.new:
-                map_location=torch.device('cpu')
                 tmp = torch.load(args.ssl_model_path, map_location=map_location)['ssl_model']
             else:
-                map_location=torch.device('cpu')
                 tmp = torch.load(args.ssl_model_path, map_location=map_location)
         else:
-            map_location=torch.device('cpu')
             tmp = torch.load(args.ssl_model_path, map_location=map_location)['ssl_model']
         c_head_model.load_state_dict(tmp)
         c_head_model.eval()
@@ -870,19 +866,19 @@ def main():
             test_acc = 0
             test_robust_loss = 0
             test_robust_acc = 0
-            db_rob_acc_all=0
+            db_rob_acc_all = 0
             epsilon = epsilon / 255.
             TestX = []
             TestY = []
             Testdelta = []
             test_n = 0
 
-            db_test_acc_clean_all=0
+            db_test_acc_clean_all = 0
 
             print('epsilon', epsilon)
 
-            contrastive_attack_loss=0
-            contrastive_clean_loss=0
+            contrastive_attack_loss = 0
+            contrastive_clean_loss = 0
             # Standard Adversarial Attack Generation
             for i, batch in enumerate(test_batches):
                 if args.debug and i > 0:
@@ -933,7 +929,7 @@ def main():
                 test_loss += loss.item() * y.size(0)
                 test_acc += (output.max(1)[1] == y).sum().item()
                 test_n += y.size(0)
-                # torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
                 print("test_robust_acc", test_robust_acc/test_n, db_rob_acc_all/test_n, 'clean', db_test_acc_clean_all/test_n)
 
             print('clean contrastive=%.6f \t adv contrastive=%.6f' %
@@ -973,7 +969,7 @@ def main():
                     # test_clean_acc = 0
 
                     test_n = 0
-                    adaadv_contrastive_loss=0
+                    adaadv_contrastive_loss = 0
 
                     print('contrastive bs', bs)
 
@@ -1008,7 +1004,7 @@ def main():
                         robust_ada_loss = criterion(robust_output_ada, y)
                         test_robust_ada_loss += robust_ada_loss.item() * y.size(0)
 
-                        # torch.cuda.empty_cache()
+                        torch.cuda.empty_cache()
 
                         # New SSL Loss after reversal
                         contrastive_ada_attack = \
@@ -1044,7 +1040,7 @@ def main():
                         test_n += y.size(0)
                         # print(test_robust_ada_acc, test_robust_ada_loss)
 
-                        # torch.cuda.empty_cache()
+                        torch.cuda.empty_cache()
                         # print(bs_ind)
 
                     print('lambda S', lambda_S)
