@@ -3,3 +3,6 @@ ssl_model_130.pth
 __pycache__
 learning/__pycache__
 local
+cs294-158-ssl
+deepul_helper
+results
