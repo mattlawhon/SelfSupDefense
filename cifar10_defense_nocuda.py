@@ -20,10 +20,10 @@ from utils import *
 mu = torch.tensor(cifar10_mean).view(3,1,1) 
 std = torch.tensor(cifar10_std).view(3,1,1) 
 
-# def normalize(X):
-#     return (X - mu)/std
 def normalize(X):
-    return X
+    return (X - mu)/std
+# def normalize(X):
+#     return X
 
 def normal_guassian_normalize(T):
     return (T-T.mean()) / T.std()

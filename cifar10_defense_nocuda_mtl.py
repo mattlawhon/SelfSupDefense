@@ -22,10 +22,10 @@ from utils import *
 mu = torch.tensor(cifar10_mean).view(3,1,1) 
 std = torch.tensor(cifar10_std).view(3,1,1) 
 
-# def normalize(X):
-#     return (X - mu)/std
 def normalize(X):
-    return X
+    return (X - mu)/std
+# def normalize(X):
+#     return X
 
 def normal_guassian_normalize(T):
     return (T-T.mean()) / T.std()
@@ -466,6 +466,7 @@ def get_args():
     parser.add_argument('--l2', default=0, type=float)
     parser.add_argument('--l1', default=0, type=float)
     parser.add_argument('--batch-size', default=1024, type=int)
+    parser.add_argument('--batch-count', default=-1, type=int)
     parser.add_argument('--contrastive_bs', default=512, type=int)
     parser.add_argument('--data-dir', default='../cifar-data', type=str)
     parser.add_argument('--epochs', default=200, type=int)
@@ -905,6 +906,9 @@ def main():
                 if args.debug and i > 0:
                     break
 
+                if args.batch_count != -1 and i > args.batch_count:
+                    break
+
                 X, y = batch['input'], batch['target']
                 TestX.append(X)
                 TestY.append(y)
@@ -997,6 +1001,12 @@ def main():
                     for bs_ind in range(num_bs):
                         if args.debug and bs_ind > 0:
                             break
+
+                        if args.batch_count != -1 and bs_ind > args.batch_count:
+                            break
+                        print(bs_ind)
+
+                        
                         X = TestX[bs_ind * bs:(bs_ind + 1) * bs]
                         y = TestY[bs_ind * bs:(bs_ind + 1) * bs]
                         delta = Testdelta[bs_ind * bs:(bs_ind + 1) * bs]
@@ -1059,10 +1069,16 @@ def main():
                         clean_ada_loss = criterion(clean_output_ada, y)
                         test_clean_ada_loss += clean_ada_loss.item() * y.size(0)
                         test_n += y.size(0)
-                        # print(test_robust_ada_acc, test_robust_ada_loss)
-
+                        print(f'\n{time.time()}\n')
+                        print('e=%d  scale=%.4f step=%d epsilon=%d \t TestLoss=%.4f TestAcc=%.4f TestCleanAdaAcc=%.4f \t TestRobLoss=%.4f TestRobAcc %.4f \t AdaTestLoss=%.4f AdaTestAcc %.4f' %
+                        (0, adda_times, (int(base_attack_step * adda_times)), (epsilon*255),
+                        (test_loss / test_n), (test_acc / test_n * 100), (test_clean_ada_acc / test_n * 100),
+                        (test_robust_loss / test_n), (test_robust_acc / test_n * 100),
+                        (test_robust_loss / test_n), (test_robust_ada_acc / test_n * 100)))
                         torch.cuda.empty_cache()
                         # print(bs_ind)
+
+                    # import pdb; pdb.set_trace()
 
                     print('lambda S', lambda_S)
                     print(

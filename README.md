@@ -1,5 +1,6 @@
-# Adversarial Attacks are Reversible via Natural Supervision
-ICCV2021
+# Adversarial Attacks are Reversible with Multiple Self Supervised Tasks
+This is a fork of Chengzhi Mao's excellent repo for his paper **Adversarial Attacks are Reversible via Natural Supervision**
+
 ## Citation
 ```
 @InProceedings{Mao_2021_ICCV,
@@ -37,5 +38,8 @@ to train SSL, do not use `--eval_only`, and vice versa.
 
 * We offer PGD, CW, and BIM attack
 * For AutoAttack, run the following: `CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python cifar10_defense_rebAA.py --fname test --md_path /proj/vondrick/mcz/SSRobust/Pretrained_model/unlabeled-rob/cifar10_rst_adv.pt.ckpt --carmon --eval_only --ssl_model_path /proj/vondrick/mcz/SSRobust/Ours/unlab_cifar10_srn28-10_carmon/March1/ssl_model_130.pth --attack-iters 1 --n_views 4`
+
+* For MTL approach on 200 image test-set on CPU machine: `python cifar10_defense_nocuda_mtl.py --fname test --md_path cifar10_rst_adv.pt.ckpt --carmon --eval_only --ssl_model_path ssl_model_130.pth --batch-size 50 --batch-count 4`
+
 
 
