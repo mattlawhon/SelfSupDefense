@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import numpy as np
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 import torch
 from torch import nn
 import torchvision
@@ -303,6 +303,14 @@ def accuracy(output, target, topk=(1,)):
         return res
 
 
+def remove_module_state_dict(state_dict):
+    """Clean state_dict keys if original state dict was saved from DistributedDataParallel
+       and loaded without"""
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        name = k[7:]
+        new_state_dict[name] = v
+    return new_state_dict
 
 
 

@@ -6,3 +6,5 @@ local
 cs294-158-ssl
 deepul_helper
 results
+tasks
+*.ipynb
