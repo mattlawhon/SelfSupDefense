@@ -638,7 +638,7 @@ def main():
     else:
         raise ValueError("Unknown model")
 
-    if not args.TRADES and not args.Bag:
+    if not args.TRADES and not args.Bag and args.model != 'densenet':
         if torch.cuda.is_available():
             model = nn.DataParallel(model).cuda()
         else:
@@ -687,14 +687,14 @@ def main():
 
     if args.md_path != '':
         # try:
-        if args.TRADES or args.Bag:
+        if args.TRADES or args.Bag or args.model == 'densenet':
             tmp=torch.load(args.md_path, map_location=device)
         else:
             tmp=torch.load(args.md_path, map_location=device)['state_dict']
 
         model.load_state_dict(tmp)
 
-    if args.TRADES or args.Bag:
+    if args.TRADES or args.Bag or args.model == 'densenet':
         if torch.cuda.is_available():
             model = nn.DataParallel(model).cuda()
 
