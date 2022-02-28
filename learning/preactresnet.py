@@ -408,6 +408,19 @@ class Res18_out6_model(nn.Module): # after the avg pooling layer
         x = self.linear2(x)
         return x
 
+class Res18_out7_model(nn.Module): # after the avg pooling layer
+    def __init__(self):
+        super().__init__()
+
+        self.bn3 = nn.BatchNorm1d(128)
+        self.linear = nn.Linear(1024, 128)
+        self.linear2 = nn.Linear(128, head_num)
+
+    def forward(self, x):
+        x = F.relu(self.bn3(self.linear(x)))
+        x = self.linear2(x)
+        return x
+
 
 class Res50_ssl_model(nn.Module): # after the avg pooling layer
     def __init__(self):

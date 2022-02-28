@@ -99,8 +99,3 @@ class WideResNet_2(nn.Module):
             return self.fc(out)
         else:
             return self.fc(out), out
-
-#
-# if return_prelogit:
-#         else:
-#             return self.fc(out)

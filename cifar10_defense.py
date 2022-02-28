@@ -15,21 +15,20 @@ from torch.autograd import Variable
 
 from learning.wideresnet import WideResNet, WideResNetBD, WideResNetMed_SSL, WRN34_out_branch
 from learning.preactresnet import PreActResNet18Mhead, Res18_out3_model, Res18_out4_model, Res18_out5_model,Res18_out6_model
+from learning.densenet import densenet121
 from utils import *
 from tasks.rotation import *
 from tasks.context_encoder import *
 
-if torch.cuda.is_available():
-    mu = torch.tensor(cifar10_mean).view(3,1,1).cuda()
-    std = torch.tensor(cifar10_std).view(3,1,1).cuda()
-else:
-    mu = torch.tensor(cifar10_mean).view(3,1,1)
-    std = torch.tensor(cifar10_std).view(3,1,1)
 
-# def normalize(X):
-#     return (X - mu)/std
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+mu = torch.tensor(cifar10_mean).view(3,1,1).to(device)
+std = torch.tensor(cifar10_std).view(3,1,1).to(device)
+
 def normalize(X):
-    return X
+    return (X - mu)/std
+# def normalize(X):
+#     return X
 
 def normal_guassian_normalize(T):
     return (T-T.mean()) / T.std()
@@ -539,6 +538,7 @@ def get_args():
     parser.add_argument('--cutout-len', type=int)
     parser.add_argument('--mixup', action='store_true')
     parser.add_argument('--rand', action='store_true')
+    parser.add_argument('--normalize', action='store_true')
 
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--MCtimes', default=1, type=int)
@@ -560,6 +560,7 @@ def get_args():
 
 
 def main():
+    global mu, std
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     adda_times=1
 
@@ -568,6 +569,10 @@ def main():
     import datetime
     unique_str = str(uuid.uuid4())[:8]
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d_%H:%M:%S')
+
+    if not args.normalize:
+        mu = torch.tensor((0,)).to(device)
+        std = torch.tensor((1,)).to(device)
 
     args.fname = os.path.join(args.save_root_path, args.fname, timestamp + unique_str)
     if not os.path.exists(args.fname):
@@ -622,12 +627,14 @@ def main():
         elif args.TRADES or args.Bag:
             from learning.unlabel_WRN import WideResNet_2
             model = WideResNet_2(depth=34, widen_factor=10)
-
         else:
             model = WideResNetMed_SSL(34, 10, widen_factor=args.width_factor, dropRate=0.0)
-            # print(model)
         c_head_model = WRN34_out_branch()
 
+    elif args.model == 'densenet':
+        from learning.preactresnet import Res18_out7_model
+        model = densenet121()
+        c_head_model = Res18_out7_model()
     else:
         raise ValueError("Unknown model")
 
@@ -675,7 +682,7 @@ def main():
         else:
             return args.lr_max / 100.
 
-    learning_rate=1e-4
+    learning_rate=3e-4
     opt = torch.optim.Adam(params, lr=learning_rate)
 
     if args.md_path != '':
@@ -721,9 +728,11 @@ def main():
 
     # Train the SSL model first
     if not args.eval_only:
-        assert(False)
+        # assert(False)
+
+        rotation_model = ip_model = None
         flag=True
-        for epoch in range(0, 201):
+        for epoch in range(args.epochs+1):
             model.eval()
             c_head_model.train()
 
@@ -735,7 +744,7 @@ def main():
                 X, y = batch['input'], batch['target']
 
                 contrastive_Loss = \
-                    calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model)
+                    calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
 
                 opt.zero_grad()
                 contrastive_Loss.backward()
@@ -839,14 +848,14 @@ def main():
                     # Need to calculate the contrastive here, i.e., as the training goes, because training change SSL contrastive branch model weights
                     Adv_image = torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)
                     contrastive_attack = \
-                        calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model)
+                        calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
                     contrastive_clean = \
-                        calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model)
+                        calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
                     contrastive_attack_loss += contrastive_attack.item() * y.size(0)
                     contrastive_clean_loss += contrastive_clean.item() * y.size(0)
 
                     # Our reversal vector
-                    delta2 = attack_constrastive_Mhead(model, c_head_model, scripted_transforms, criterion,
+                    delta2 = attack_constrastive_Mhead(model, c_head_model, rotation_model, ip_model, scripted_transforms, criterion,
                                                        torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit),
                                                        torch.zeros_like(y), epsilon * adda_times, pgd_alpha,  # 1, 0.2,
                                                        int(args.attack_iters * adda_times) if not args.rand else 0,
@@ -864,11 +873,11 @@ def main():
                     contrastive_ada_attack = \
                         calculate_contrastive_Mhead_loss(
                             torch.clamp(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit) + delta2, min=lower_limit, max=upper_limit),
-                                                         scripted_transforms, model, criterion, c_head_model)
+                                                         scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
                     adaadv_contrastive_loss += contrastive_ada_attack.item() * y.size(0)
 
                     # The reversal vector for clean examples, since our algorithm applied reversal regardlessly.
-                    delta3 = attack_constrastive_Mhead(model, c_head_model, scripted_transforms,
+                    delta3 = attack_constrastive_Mhead(model, c_head_model, rotation_model, ip_model, scripted_transforms,
                                                        criterion,
                                                        X,
                                                        torch.zeros_like(y), epsilon * adda_times, pgd_alpha,  # 1, 0.2,
@@ -922,8 +931,8 @@ def main():
             dataset='cifar10'
             n_classes = 10
 
-            rotation_ckpt_pth = os.path.join('results', 'cifar10_rotation', 'model_best.pth.tar')
-            ip_ckpt_pth = os.path.join('results', 'cifar10_context_encoder', 'model_best.pth.tar')
+            rotation_ckpt_pth = os.path.join('models', 'cifar10_rotation', 'model_best.pth.tar')
+            ip_ckpt_pth = os.path.join('models', 'cifar10_context_encoder', 'model_best.pth.tar')
 
             rotation_ckpt = torch.load(rotation_ckpt_pth, map_location=device)
             ip_ckpt = torch.load(ip_ckpt_pth, map_location=device)
@@ -998,7 +1007,7 @@ def main():
                     delta = adaptive_attack_pgd(model, X, y, c_head_model, rotation_model, ip_model, scripted_transforms, criterion,
                                                 epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
                                        early_stop=args.eval, lambda_S=lambda_S)
-                elif args.attack_type == 'BIM':
+                elif args.attack_type == 'BIM': 
                     delta = attack_BIM(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
                                        early_stop=args.eval)
                 else:
