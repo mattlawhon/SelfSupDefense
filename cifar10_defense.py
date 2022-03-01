@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from learning.wideresnet import WideResNet, WideResNetBD, WideResNetMed_SSL, WRN34_out_branch
-from learning.preactresnet import PreActResNet18Mhead, Res18_out3_model, Res18_out4_model, Res18_out5_model,Res18_out6_model
+from learning.preactresnet import PreActResNet18Mhead, Res18_out3_model, Res18_out4_model, Res18_out5_model,Res18_out6_model, Res18_out7_model
 from learning.densenet import densenet121
 from utils import *
 from tasks.rotation import *
@@ -253,7 +253,7 @@ def adaptive_attack_pgd(model, X, y, c_head_model, rot, cont, scripted_transform
             loss_classification = F.cross_entropy(output, y)
             loss_ada = -calculate_contrastive_Mhead_loss(X+delta, scripted_transforms, model, criterion, 
                                                          c_head_model,rot, cont, no_grad=False, n_views=n_views)
-            loss = loss_classification + loss_ada * lambda_S
+            loss = loss_classification * (1-lambda_S) + loss_ada * lambda_S
             loss.backward()
             grad = delta.grad.detach()
             d = delta[index, :, :, :]
@@ -571,8 +571,8 @@ def main():
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d_%H:%M:%S')
 
     if not args.normalize:
-        mu = torch.tensor((0,)).to(device)
-        std = torch.tensor((1,)).to(device)
+        mu = torch.tensor((0,0,0)).view(3,1,1).to(device)
+        std = torch.tensor((1,1,1)).view(3,1,1).to(device)
 
     args.fname = os.path.join(args.save_root_path, args.fname, timestamp + unique_str)
     if not os.path.exists(args.fname):
@@ -616,8 +616,7 @@ def main():
 
         if args.attack_type=='AA':
             ori_model = PreActResNet18()
-            if torch.cuda.is_available():
-                ori_model = nn.DataParallel(ori_model).cuda()
+            ori_model = nn.DataParallel(ori_model).to(device)
 
     elif args.model == 'WideResNet':
         # model = WideResNetMed_SSL(34, 10, widen_factor=args.width_factor, dropRate=0.0)
@@ -632,24 +631,15 @@ def main():
         c_head_model = WRN34_out_branch()
 
     elif args.model == 'densenet':
-        from learning.preactresnet import Res18_out7_model
         model = densenet121()
         c_head_model = Res18_out7_model()
     else:
         raise ValueError("Unknown model")
 
     if not args.TRADES and not args.Bag and args.model != 'densenet':
-        if torch.cuda.is_available():
-            model = nn.DataParallel(model).cuda()
-        else:
-            model = nn.DataParallel(model)
+        model = nn.DataParallel(model).to(device)
         
-
-    if torch.cuda.is_available():
-        c_head_model = nn.DataParallel(c_head_model).cuda()
-    else:
-        c_head_model = nn.DataParallel(c_head_model)
-
+    c_head_model = nn.DataParallel(c_head_model).to(device)
     c_head_model.train()
 
 
@@ -964,8 +954,8 @@ def main():
         if args.norm=='l_2':
             epsilon_list=[128, 256, 256+128, 256+256, 512+128, 512+256]
             epsilon_list=[256]
-        for epsilon in epsilon_list:  #
-            lambda_S= 10
+        for lambda_S in np.arange(0, 1.1, 0.1):  #
+            epsilon = 8
             # lambda S is the weight for defense aware attack, if not defense attack, put it to be 0.
             # only work for one Lambda_S now, attack will be at success at all if do a list, but is reasonable for single.
 
@@ -1165,6 +1155,8 @@ def main():
                         # print(bs_ind)
 
                     # import pdb; pdb.set_trace()
+                    print(f'Attacked Accuracy: {round(test_robust_acc/test_n, 3)}, Clean Accuracy: {round(test_acc/test_n, 3)}')
+
 
                     print('lambda S', lambda_S)
                     print(
