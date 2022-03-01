@@ -206,7 +206,7 @@ def calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, s
     # print(out.size(), output.size(), closs, X.size(), rot_output, cont_output)
     # assert(False)
     if rot and cont:
-        return closs + rot_output + cont_output
+        return closs + torch.mean(rot_output) + torch.mean(cont_output)
     else:
         return closs
 
