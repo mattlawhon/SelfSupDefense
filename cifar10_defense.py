@@ -206,7 +206,7 @@ def calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, s
     # print(out.size(), output.size(), closs, X.size(), rot_output, cont_output)
     # assert(False)
     if rot and cont:
-        return closs + torch.mean(rot_output) + torch.mean(cont_output)
+        return torch.mean(closs + 50*torch.mean(rot_output) + 10*torch.mean(cont_output))
     else:
         return closs
 
@@ -253,7 +253,7 @@ def adaptive_attack_pgd(model, X, y, c_head_model, rot, cont, scripted_transform
             loss_classification = F.cross_entropy(output, y)
             loss_ada = -calculate_contrastive_Mhead_loss(X+delta, scripted_transforms, model, criterion, 
                                                          c_head_model,rot, cont, no_grad=False, n_views=n_views)
-            loss = loss_classification * (1-lambda_S) + loss_ada * lambda_S
+            loss = loss_classification + loss_ada * lambda_S
             loss.backward()
             grad = delta.grad.detach()
             d = delta[index, :, :, :]
@@ -604,7 +604,7 @@ def main():
     train_batches = Batches(train_set_x, args.batch_size, shuffle=True, set_random_choices=True, num_workers=2)
 
     test_set = list(zip(transpose(dataset['test']['data'] / 255.), dataset['test']['labels']))
-    test_batches = Batches(test_set, args.batch_size, shuffle=False, num_workers=2)
+    test_batches = Batches(test_set, args.batch_size, shuffle=True, num_workers=2)
 
     epsilon = (args.epsilon / 255.)
     pgd_alpha = (args.pgd_alpha / 255.)
@@ -663,7 +663,7 @@ def main():
         params = [{'params': decay, 'weight_decay': args.l2},
                          {'params': no_decay, 'weight_decay': 0}]
 
-
+    
     def lr_schedule(t):
         if t / args.epochs < 0.5:
             return args.lr_max
@@ -954,7 +954,7 @@ def main():
         if args.norm=='l_2':
             epsilon_list=[128, 256, 256+128, 256+256, 512+128, 512+256]
             epsilon_list=[256]
-        for lambda_S in np.arange(0, 1.1, 0.1):  #
+        for lambda_S in [0]:  #
             epsilon = 8
             # lambda S is the weight for defense aware attack, if not defense attack, put it to be 0.
             # only work for one Lambda_S now, attack will be at success at all if do a list, but is reasonable for single.
@@ -1068,6 +1068,7 @@ def main():
                     # test_clean_loss = 0
                     # test_clean_acc = 0
 
+
                     test_n = 0
                     adaadv_contrastive_loss = 0
 
@@ -1077,8 +1078,6 @@ def main():
                         if args.debug and bs_ind > 0:
                             break
 
-                        print(bs_ind)
-                        
                         X = TestX[bs_ind * bs:(bs_ind + 1) * bs]
                         y = TestY[bs_ind * bs:(bs_ind + 1) * bs]
                         delta = Testdelta[bs_ind * bs:(bs_ind + 1) * bs]
