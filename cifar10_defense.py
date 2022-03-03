@@ -269,7 +269,7 @@ def calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, s
     # print(out.size(), output.size(), closs, X.size(), rot_output, cont_output)
     # assert(False)
     if rot and cont:
-        return torch.mean((closs, 50*torch.mean(rot_output), 10*torch.mean(cont_output)))
+        return closs + 50*torch.mean(rot_output) + 10*torch.mean(cont_output)
     else:
         return closs
 
@@ -314,8 +314,8 @@ def adaptive_attack_pgd(model, X, y, c_head_model, rot, cont, scripted_transform
                 break
 
             loss_classification = F.cross_entropy(output, y)
-            loss_ada = -torch.mean(calculate_contrastive_Mhead_loss(X+delta, scripted_transforms, model, criterion, 
-                                                         c_head_model,rot, cont, no_grad=False, n_views=n_views))
+            loss_ada = -calculate_contrastive_Mhead_loss(X+delta, scripted_transforms, model, criterion, 
+                                                         c_head_model,rot, cont, no_grad=False, n_views=n_views)
             loss = loss_classification + loss_ada * lambda_S
             loss.backward()
             grad = delta.grad.detach()
@@ -1009,8 +1009,7 @@ def main():
         for i, batch in enumerate(train_batches):
             X, y = batch['input'], batch['target']
             contrastive_Loss = \
-                torch.mean( \
-                calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model))
+                calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
             break
 
         epsilon_list=[8]
@@ -1080,11 +1079,9 @@ def main():
 
                         Adv_image = torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)
                         contrastive_attack = \
-                            torch.mean( \
-                            calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4))
+                            calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4)
                         contrastive_clean = \
-                            torch.mean( \
-                            calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4))
+                            calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4)
 
                     contrastive_attack_loss += contrastive_attack.item() * y.size(0)
                     contrastive_clean_loss += contrastive_clean.item() * y.size(0)
