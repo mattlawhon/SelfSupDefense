@@ -73,7 +73,7 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
     
     delta1 = clamp(delta1, lower_limit-X, upper_limit-X)
     delta2 = clamp(delta2, lower_limit-X, upper_limit-X)
-    deltasu = clamp(deltasu, lower_limit-X, upper_limit-X)
+    deltasu = clamp(deltasu, lower_limit-Xsu, upper_limit-Xsu)
     delta1.requires_grad = True
     delta2.requires_grad = True
     deltasu.requires_grad = True
