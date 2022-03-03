@@ -61,57 +61,117 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
                norm, early_stop=False,
                mixup=False, y_a=None, y_b=None, lam=None, Ltype=None, reverse=False, n_views=2):
     """Reverse algorithm that optimize the SSL loss via PGD"""
+    Xsu = torch.repeat_interleave(torch.repeat_interleave(X, 4, dim=2), 4, dim=3)
     if torch.cuda.is_available():
-        delta = torch.zeros_like(X).cuda()
+        delta1 = torch.zeros_like(X).cuda()
+        delta2 = torch.zeros_like(X).cuda()
+        deltasu = torch.zeros_like(Xsu).cuda()
     else:
-        delta = torch.zeros_like(X)
-    if norm == "l_inf":
-        delta.uniform_(-epsilon, epsilon)
-    elif norm == "l_2":
-        delta.normal_()
-        d_flat = delta.view(delta.size(0),-1)
-        n = d_flat.norm(p=2,dim=1).view(delta.size(0),1,1,1)
-        r = torch.zeros_like(n).uniform_(0, 1)
-        delta *= r/n*epsilon
-    elif norm == 'l_1':
-        pass
-    else:
-        raise ValueError
-    delta = clamp(delta, lower_limit-X, upper_limit-X)
-    delta.requires_grad = True
+        delta1 = torch.zeros_like(X).cuda()
+        delta2 = torch.zeros_like(X).cuda()
+        deltasu = torch.zeros_like(Xsu).cuda()
+    
+    delta1 = clamp(delta1, lower_limit-X, upper_limit-X)
+    delta2 = clamp(delta2, lower_limit-X, upper_limit-X)
+    deltasu = clamp(deltasu, lower_limit-X, upper_limit-X)
+    delta1.requires_grad = True
+    delta2.requires_grad = True
+    deltasu.requires_grad = True
+
+    downsample = nn.Conv2d(3, 3, 4, stride=4)
+
     for _ in range(attack_iters):
+        X1 = X + delta1
+        X2 = X + delta2
+        X3 = Xsu + deltasu
 
-        new_x = X + delta
-        # import pdb; pdb.set_trace()
-
-        # TODO: here the neg sample is fixed, we can also try random neg sample to enlarge and diversify
-        closs, rloss, iloss = -calculate_contrastive_Mhead_loss(new_x, scripted_transforms, model, criterion,
+        closs, rloss, iloss = -calculate_contrastive_Mhead_loss_g(X1, X2, X3, scripted_transforms, model, criterion,
                                                      model_ssl, rot, cont, no_grad=False, n_views=n_views)
         closs, rloss, iloss = -closs, -rloss, -iloss   
-                                                
-        
-        loss.backward()
-        grad = delta.grad.detach()
 
-        d = delta
-        g = grad
+        closs.backward(), rloss.backward(), iloss.backward()
+        grad1, grad2, gradsu = delta1.grad.detach(), delta2.grad.detach(), deltasu.grad.detach()
+
+        d = delta1
+        g1, g2, g3 = grad1, grad2, downsample(gradsu)
         x = X
-        if norm == "l_inf":
-            d = torch.clamp(d + alpha * torch.sign(g), min=-epsilon, max=epsilon)
-        elif norm == "l_2":
-            g_norm = torch.norm(g.view(g.shape[0],-1),dim=1).view(-1,1,1,1)
-            scaled_g = g/(g_norm + 1e-10)
-            d = (d + scaled_g*alpha).view(d.size(0),-1).renorm(p=2,dim=0,maxnorm=epsilon).view_as(d)
-        elif norm == "l_1":
-            g_norm = torch.sum(torch.abs(g.view(g.shape[0], -1)), dim=1).view(-1, 1, 1, 1)
-            scaled_g = g / (g_norm + 1e-10)
-            d = (d + scaled_g * alpha).view(d.size(0), -1).renorm(p=1, dim=0, maxnorm=epsilon).view_as(d)
 
+        d = torch.clamp(d + alpha *torch.mean((torch.sign(g1), torch.sign(g2), torch.sign(g3))), min=-epsilon, max=epsilon)
         d = clamp(d, lower_limit - x, upper_limit - x)
-        delta.data = d
-        delta.grad.zero_()
-    max_delta = delta.detach()
+
+        delta1.data = d
+        delta2.data = d
+        deltasu.data = torch.repeat_interleave(torch.repeat_interleave(d, 4, dim=2), 4, dim=3)
+
+        delta1.grad.zero_()
+        delta2.grad.zero_()
+        deltasu.grad.zero_()
+    max_delta = delta1.detach()
     return max_delta
+
+
+def calculate_contrastive_Mhead_loss_g(X, X1, X2, scripted_transforms, model, criterion, submodel, rot, cont, no_grad=True, n_views=2):
+    """Creating multiviews for contrastive SSL loss
+
+    Attributes:
+        X: input image array.
+        scripted_transforms: transformation for generating different views for SSL.
+        model: classifier backbone model.
+        criterion: cross-entropy.
+        submodel: SSL model that do contrastive loss
+        no_grad: do not backpropagate
+        n_views: views generated for contrastive learning.
+
+    Return:
+        closs: SSL loss.
+    """
+    new_x = X
+    bs = X.size(0)
+
+    if n_views == 2:
+        X_transformed1 = scripted_transforms(new_x)
+        X_transformed2 = scripted_transforms(new_x)
+        # batch_size=1
+        # plt.imshow(torch.squeeze(X).permute((1, 2, 0)))
+        # plt.show()
+        # plt.imshow(torch.squeeze(X_transformed1).permute((1, 2, 0)))
+        # plt.show()
+        # plt.imshow(torch.squeeze(X_transformed2).permute((1, 2, 0)))
+        # plt.show()
+        
+        X_constrastive = torch.cat([X_transformed1, X_transformed2], dim=0)
+    elif n_views ==4:
+        X_transformed1 = scripted_transforms(new_x)
+        X_transformed2 = scripted_transforms(new_x)
+        X_transformed3 = scripted_transforms(new_x)
+        X_transformed4 = scripted_transforms(new_x)
+        X_constrastive = torch.cat([X_transformed1, X_transformed2, X_transformed3, X_transformed4], dim=0)
+
+    if no_grad:
+        with torch.no_grad():
+            _, out = model(normalize(X_constrastive))
+    else:
+        _, out = model(normalize(X_constrastive))
+
+    
+    # import pdb; pdb.set_trace()
+
+    output = submodel(out)
+    closs, acc = constrastive_loss_func(output, criterion, bs, n_views)
+    if rot:
+        rot_output = rot(X1)[0]['Loss']
+    if cont:
+        
+        cont_output = cont(X2)[0]['Loss']
+    
+    # print(out.size(), output.size(), closs, X.size(), X)
+    # print(out.size(), output.size(), closs, X.size(), rot_output, cont_output)
+    # assert(False)
+    if rot and cont:
+        return (closs, 50*torch.mean(rot_output), 10*torch.mean(cont_output))
+    else:
+        return closs
+
 
 def constrastive_loss_func(contrastive_head, criterion, bs, n_views):
     """Loss function for contrastive SSL learning"""
@@ -209,7 +269,7 @@ def calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, s
     # print(out.size(), output.size(), closs, X.size(), rot_output, cont_output)
     # assert(False)
     if rot and cont:
-        return (closs, 50*torch.mean(rot_output), 10*torch.mean(cont_output))
+        return torch.mean((closs, 50*torch.mean(rot_output), 10*torch.mean(cont_output)))
     else:
         return closs
 
@@ -979,73 +1039,84 @@ def main():
 
             contrastive_attack_loss = 0
             contrastive_clean_loss = 0
+            if False:
 
-            # Standard Adversarial Attack Generation
-            for i, batch in enumerate(test_batches):
-                if args.debug and i > 0:
-                    break
+                # Standard Adversarial Attack Generation
+                for i, batch in enumerate(test_batches):
+                    if args.debug and i > 0:
+                        break
 
-                X, y = batch['input'], batch['target']
-                TestX.append(X)
-                TestY.append(y)
+                    X, y = batch['input'], batch['target']
+                    TestX.append(X)
+                    TestY.append(y)
 
-                if torch.cuda.is_available():
-                    X = X.cuda()
-                    y = y.cuda()
+                    if torch.cuda.is_available():
+                        X = X.cuda()
+                        y = y.cuda()
 
-                if args.attack_type == 'CW':
-                    delta = attack_CW(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
-                                       early_stop=args.eval)
-                elif args.attack_type == 'adapt':
-                    delta = adaptive_attack_pgd(model, X, y, c_head_model, rotation_model, ip_model, scripted_transforms, criterion,
-                                                epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
-                                       early_stop=args.eval, lambda_S=lambda_S)
-                elif args.attack_type == 'BIM': 
-                    delta = attack_BIM(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
-                                       early_stop=args.eval)
-                else:
-                    delta = attack_pgd(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
-                                           early_stop=args.eval)
-                delta = delta.detach()
-                Testdelta.append(delta)
+                    if args.attack_type == 'CW':
+                        delta = attack_CW(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
+                                        early_stop=args.eval)
+                    elif args.attack_type == 'adapt':
+                        delta = adaptive_attack_pgd(model, X, y, c_head_model, rotation_model, ip_model, scripted_transforms, criterion,
+                                                    epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
+                                        early_stop=args.eval, lambda_S=lambda_S)
+                    elif args.attack_type == 'BIM': 
+                        delta = attack_BIM(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
+                                        early_stop=args.eval)
+                    else:
+                        delta = attack_pgd(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
+                                            early_stop=args.eval)
+                    delta = delta.detach()
+                    Testdelta.append(delta)
 
-                with torch.no_grad():
-                    robust_output, _ = model(
-                        normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)))
-                    output, _ = model(normalize(X))
+                    with torch.no_grad():
+                        robust_output, _ = model(
+                            normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)))
+                        output, _ = model(normalize(X))
 
-                    robust_loss = criterion(robust_output, y)
-                    loss = criterion(output, y)
+                        robust_loss = criterion(robust_output, y)
+                        loss = criterion(output, y)
 
-                    Adv_image = torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)
-                    contrastive_attack = \
-                        torch.mean( \
-                        calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4))
-                    contrastive_clean = \
-                        torch.mean( \
-                        calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4))
+                        Adv_image = torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)
+                        contrastive_attack = \
+                            torch.mean( \
+                            calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4))
+                        contrastive_clean = \
+                            torch.mean( \
+                            calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4))
 
-                contrastive_attack_loss += contrastive_attack.item() * y.size(0)
-                contrastive_clean_loss += contrastive_clean.item() * y.size(0)
+                    contrastive_attack_loss += contrastive_attack.item() * y.size(0)
+                    contrastive_clean_loss += contrastive_clean.item() * y.size(0)
 
-                test_robust_loss += robust_loss.item() * y.size(0)
-                test_robust_acc += (robust_output.max(1)[1] == y).sum().item()
-                test_loss += loss.item() * y.size(0)
-                test_acc += (output.max(1)[1] == y).sum().item()
-                test_n += y.size(0)
-                torch.cuda.empty_cache()
-                # print("test_robust_acc", test_robust_acc/test_n, "test_acc", test_acc/test_n)
+                    test_robust_loss += robust_loss.item() * y.size(0)
+                    test_robust_acc += (robust_output.max(1)[1] == y).sum().item()
+                    test_loss += loss.item() * y.size(0)
+                    test_acc += (output.max(1)[1] == y).sum().item()
+                    test_n += y.size(0)
+                    torch.cuda.empty_cache()
+                    # print("test_robust_acc", test_robust_acc/test_n, "test_acc", test_acc/test_n)
 
-                print(f'Attacked Accuracy: {round(test_robust_acc/test_n, 3)}, Clean Accuracy: {round(test_acc/test_n, 3)}')
-
-
-            print('clean contrastive=%.6f \t adv contrastive=%.6f' %
-                                ((contrastive_clean_loss / test_n), (contrastive_attack_loss / test_n)))
+                    print(f'Attacked Accuracy: {round(test_robust_acc/test_n, 3)}, Clean Accuracy: {round(test_acc/test_n, 3)}')
 
 
-            TestX = torch.cat(TestX, dim=0)
-            TestY = torch.cat(TestY, dim=0)
-            Testdelta = torch.cat(Testdelta, dim=0)
+                print('clean contrastive=%.6f \t adv contrastive=%.6f' %
+                                    ((contrastive_clean_loss / test_n), (contrastive_attack_loss / test_n)))
+
+
+                TestX = torch.cat(TestX, dim=0)
+                TestY = torch.cat(TestY, dim=0)
+                Testdelta = torch.cat(Testdelta, dim=0)
+
+                torch.save(TestX, 'testx.pt')
+                torch.save(TestY, 'testy.pt')
+                torch.save(Testdelta, 'testd.pt')
+
+
+            else:
+                TestY = torch.load('testy.pt', map_location = device)
+                TestX = torch.load('testx.pt', map_location = device)
+                Testdelta = torch.load('testd.pt', map_location = device)
 
             total_len = TestX.shape[0]
             ind = [i for i in range(total_len)]
@@ -1116,12 +1187,11 @@ def main():
 
                         # New SSL Loss after reversal
                         contrastive_ada_attack = \
-                            torch.mean( \
                             calculate_contrastive_Mhead_loss(
                                 torch.clamp(
                                     torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit) + delta2,
                                     min=lower_limit, max=upper_limit),
-                                scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model))
+                                scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
                         adaadv_contrastive_loss += contrastive_ada_attack.item() * y.size(0)
 
                         torch.cuda.empty_cache()

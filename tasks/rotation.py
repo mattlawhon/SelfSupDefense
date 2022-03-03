@@ -47,7 +47,7 @@ class RotationPrediction(nn.Module):
     def forward(self, images):
         batch_size = images.shape[0]
         images, targets = self._preprocess(images)
-        targets = targets.to(images.get_device())
+        targets = targets.to(images.device)
 
         logits, zs = self.model(images, out_feat_keys=('classifier', self.feat_layer))
         loss = F.cross_entropy(logits, targets)
