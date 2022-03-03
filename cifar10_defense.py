@@ -67,9 +67,9 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         delta2 = torch.zeros_like(X).cuda()
         deltasu = torch.zeros_like(Xsu).cuda()
     else:
-        delta1 = torch.zeros_like(X).cuda()
-        delta2 = torch.zeros_like(X).cuda()
-        deltasu = torch.zeros_like(Xsu).cuda()
+        delta1 = torch.zeros_like(X)
+        delta2 = torch.zeros_like(X)
+        deltasu = torch.zeros_like(Xsu)
     
     delta1 = clamp(delta1, lower_limit-X, upper_limit-X)
     delta2 = clamp(delta2, lower_limit-X, upper_limit-X)
@@ -78,7 +78,7 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
     delta2.requires_grad = True
     deltasu.requires_grad = True
 
-    downsample = nn.Conv2d(3, 3, 4, stride=4)
+    downsample = nn.Conv2d(3, 3, 4, stride=4).cuda()
 
     for _ in range(attack_iters):
         X1 = X + delta1
