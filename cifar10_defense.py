@@ -96,7 +96,7 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         g1, g2, g3 = grad1, grad2, downsample(gradsu)
         x = X
 
-        d = torch.clamp(d + alpha *torch.mean((torch.sign(g1), torch.sign(g2), torch.sign(g3))), min=-epsilon, max=epsilon)
+        d = torch.clamp(d + alpha *torch.mean(torch.stack([torch.sign(g1), torch.sign(g2), torch.sign(g3)]), dim = 0), min=-epsilon, max=epsilon)
         d = clamp(d, lower_limit - x, upper_limit - x)
 
         delta1.data = d
