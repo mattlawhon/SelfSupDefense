@@ -85,8 +85,11 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         # import pdb; pdb.set_trace()
 
         # TODO: here the neg sample is fixed, we can also try random neg sample to enlarge and diversify
-        loss = -calculate_contrastive_Mhead_loss(new_x, scripted_transforms, model, criterion,
+        closs, rloss, iloss = -calculate_contrastive_Mhead_loss(new_x, scripted_transforms, model, criterion,
                                                      model_ssl, rot, cont, no_grad=False, n_views=n_views)
+        closs, rloss, iloss = -closs, -rloss, -iloss   
+                                                
+        
         loss.backward()
         grad = delta.grad.detach()
 
@@ -206,7 +209,7 @@ def calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, s
     # print(out.size(), output.size(), closs, X.size(), rot_output, cont_output)
     # assert(False)
     if rot and cont:
-        return torch.mean(closs + 50*torch.mean(rot_output) + 10*torch.mean(cont_output))
+        return (closs, 50*torch.mean(rot_output), 10*torch.mean(cont_output))
     else:
         return closs
 
@@ -251,8 +254,8 @@ def adaptive_attack_pgd(model, X, y, c_head_model, rot, cont, scripted_transform
                 break
 
             loss_classification = F.cross_entropy(output, y)
-            loss_ada = -calculate_contrastive_Mhead_loss(X+delta, scripted_transforms, model, criterion, 
-                                                         c_head_model,rot, cont, no_grad=False, n_views=n_views)
+            loss_ada = -torch.mean(calculate_contrastive_Mhead_loss(X+delta, scripted_transforms, model, criterion, 
+                                                         c_head_model,rot, cont, no_grad=False, n_views=n_views))
             loss = loss_classification + loss_ada * lambda_S
             loss.backward()
             grad = delta.grad.detach()
@@ -717,7 +720,7 @@ def main():
 
     # Train the SSL model first
     if not args.eval_only:
-        # assert(False)
+        assert(False)
 
         rotation_model = ip_model = None
         flag=True
@@ -946,7 +949,8 @@ def main():
         for i, batch in enumerate(train_batches):
             X, y = batch['input'], batch['target']
             contrastive_Loss = \
-                calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
+                torch.mean( \
+                calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model))
             break
 
         epsilon_list=[8]
@@ -1015,9 +1019,11 @@ def main():
 
                     Adv_image = torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)
                     contrastive_attack = \
-                        calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4)
+                        torch.mean( \
+                        calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4))
                     contrastive_clean = \
-                        calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4)
+                        torch.mean( \
+                        calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4))
 
                 contrastive_attack_loss += contrastive_attack.item() * y.size(0)
                 contrastive_clean_loss += contrastive_clean.item() * y.size(0)
@@ -1110,11 +1116,12 @@ def main():
 
                         # New SSL Loss after reversal
                         contrastive_ada_attack = \
+                            torch.mean( \
                             calculate_contrastive_Mhead_loss(
                                 torch.clamp(
                                     torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit) + delta2,
                                     min=lower_limit, max=upper_limit),
-                                scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
+                                scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model))
                         adaadv_contrastive_loss += contrastive_ada_attack.item() * y.size(0)
 
                         torch.cuda.empty_cache()
