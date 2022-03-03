@@ -85,7 +85,7 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         X2 = X + delta2
         X3 = Xsu + deltasu
 
-        closs, rloss, iloss = -calculate_contrastive_Mhead_loss_g(X1, X2, X3, scripted_transforms, model, criterion,
+        closs, rloss, iloss = calculate_contrastive_Mhead_loss_g(X1, X2, X3, scripted_transforms, model, criterion,
                                                      model_ssl, rot, cont, no_grad=False, n_views=n_views)
         closs, rloss, iloss = -closs, -rloss, -iloss   
 
