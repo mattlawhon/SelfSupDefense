@@ -70,6 +70,10 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         delta1 = torch.zeros_like(X)
         delta2 = torch.zeros_like(X)
         deltasu = torch.zeros_like(Xsu)
+
+    delta1.uniform_(-epsilon, epsilon)
+    delta2.uniform_(-epsilon, epsilon)
+    deltasu.uniform_(-epsilon, epsilon)
     
     delta1 = clamp(delta1, lower_limit-X, upper_limit-X)
     delta2 = clamp(delta2, lower_limit-X, upper_limit-X)
