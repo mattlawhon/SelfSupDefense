@@ -80,7 +80,7 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
 
     downsample = nn.Conv2d(3, 3, 4, stride=4).cuda()
 
-    for _ in range(attack_iters):
+    for i in range(attack_iters):
         X1 = X + delta1
         X2 = X + delta2
         X3 = Xsu + deltasu
@@ -95,8 +95,13 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         d = delta1
         g1, g2, g3 = grad1, grad2, downsample(gradsu)
         x = X
-
-        d = torch.clamp(d + alpha *torch.mean(torch.stack([torch.sign(g1), torch.sign(g2), torch.sign(g3)]), dim = 0), min=-epsilon, max=epsilon)
+        if i%3 == 0:
+            d = torch.clamp(d + alpha *torch.sign(g1), min=-epsilon, max=epsilon)
+        if i%2 == 1:
+            d = torch.clamp(d + alpha *torch.sign(g2), min=-epsilon, max=epsilon)
+        else:
+            d = torch.clamp(d + alpha *torch.sign(g3), min=-epsilon, max=epsilon)
+        # d = torch.clamp(d + alpha *torch.mean(torch.stack([torch.sign(g1), torch.sign(g2), torch.sign(g3)]), dim = 0), min=-epsilon, max=epsilon)
         d = clamp(d, lower_limit - x, upper_limit - x)
 
         delta1.data = d
@@ -1012,11 +1017,12 @@ def main():
                 calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
             break
 
-        epsilon_list=[8]
+        epsilon_list=[16]
         if args.norm=='l_2':
             epsilon_list=[128, 256, 256+128, 256+256, 512+128, 512+256]
             epsilon_list=[256]
-        for lambda_S in [0]:  #
+        for epsilon in epsilon_list:  #
+            lambda_S = 0
             epsilon = 8
             # lambda S is the weight for defense aware attack, if not defense attack, put it to be 0.
             # only work for one Lambda_S now, attack will be at success at all if do a list, but is reasonable for single.
@@ -1214,8 +1220,9 @@ def main():
                         clean_ada_loss = criterion(clean_output_ada, y)
                         test_clean_ada_loss += clean_ada_loss.item() * y.size(0)
                         test_n += y.size(0)
-
-                        print(f'Attacked & Reversed Accuracy: {round(test_robust_ada_acc/test_n, 3)}, Clean & Reversed Accuracy: {round(test_clean_ada_acc/test_n, 3)}')
+                        
+                        p = test_robust_ada_acc/test_n
+                        print(f'Attacked & Reversed Accuracy: {round(test_robust_ada_acc/test_n, 3)}, 95ci:({round(p - 2*((p*(1-p)/test_n)**.5), 3)}, {round(p + 2*((p*(1-p)/test_n)**.5), 3)}) Clean & Reversed Accuracy: {round(test_clean_ada_acc/test_n, 3)}')
 
                         # print(f'\n{time.time()}\n')
                         # print('e=%d  scale=%.4f step=%d epsilon=%d \t TestLoss=%.4f TestAcc=%.4f TestCleanAdaAcc=%.4f \t TestRobLoss=%.4f TestRobAcc %.4f \t AdaTestLoss=%.4f AdaTestAcc %.4f' %
