@@ -84,7 +84,7 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
 
     downsample = nn.Conv2d(3, 3, 4, stride=4).cuda()
 
-    for i in range(attack_iters):
+    for i in range(40):
         X1 = X + delta1
         X2 = X + delta2
         X3 = Xsu + deltasu
@@ -102,11 +102,11 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         loss = -(closs.item() + rloss.item() + iloss.item())
 
         #if i%3 == 0:
-        d = torch.clamp(d + alpha *torch.sign(g1)*(-closs.item()/loss), min=-epsilon, max=epsilon)
-        #if i%2 == 1:
-        d = torch.clamp(d + alpha *torch.sign(g2)*(-rloss.item()/loss), min=-epsilon, max=epsilon)
-        #else:
-        d = torch.clamp(d + alpha *torch.sign(g3)*(-iloss.item()/loss), min=-epsilon, max=epsilon)
+        d = torch.clamp(d + alpha *F.normalize(g1, p=float('inf'))*(-closs.item()/loss), min=-epsilon, max=epsilon)
+        if i%2 == 1:
+            d = torch.clamp(d + alpha *F.normalize(g2, p=float('inf'))*(-rloss.item()/loss), min=-epsilon, max=epsilon)
+        else:
+            d = torch.clamp(d + alpha *F.normalize(g3, p=float('inf'))*(-iloss.item()/loss), min=-epsilon, max=epsilon)
         #d = torch.clamp(d + alpha *torch.mean(torch.stack([torch.sign(g1), torch.sign(g2), torch.sign(g3)]), dim = 0), min=-epsilon, max=epsilon)
         
         d = clamp(d, lower_limit - x, upper_limit - x)
@@ -1024,7 +1024,7 @@ def main():
                 calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model)
             break
 
-        epsilon_list=[12]
+        epsilon_list=[8]
         if args.norm=='l_2':
             epsilon_list=[128, 256, 256+128, 256+256, 512+128, 512+256]
             epsilon_list=[256]
@@ -1051,7 +1051,7 @@ def main():
 
             contrastive_attack_loss = 0
             contrastive_clean_loss = 0
-            if False:
+            if not os.path.isfile('testx.pt'):
 
                 # Standard Adversarial Attack Generation
                 for i, batch in enumerate(test_batches):
@@ -1144,9 +1144,12 @@ def main():
             count_test = 0
 
             # Start Reverse Attacks.
-            Base_atack_steps = [20]
-            for base_attack_step in Base_atack_steps: # 10, 15, 20, 10, 15, used to be 20
+            # Base_atack_steps = [20]
+            base_attack_step = 20
+            #for base_attack_step in Base_atack_steps: # 10, 15, 20, 10, 15, used to be 20
+            for epsilon in [4, 6, 8, 10, 12, 16]: 
                 for adda_times in [2]:
+                    epsilon = epsilon/255.0
                     test_robust_ada_acc = 0
                     test_clean_ada_acc = 0
                     test_robust_ada_loss = 0
@@ -1244,7 +1247,6 @@ def main():
                     print(f'Attacked Accuracy: {round(test_robust_acc/test_n, 3)}, Clean Accuracy: {round(test_acc/test_n, 3)}')
 
 
-                    print('lambda S', lambda_S)
                     print(
                         'e=%d  scale=%.4f step=%d epsilon=%d \t TestLoss=%.4f TestAcc=%.4f TestCleanAdaAcc=%.4f \t TestRobLoss=%.4f TestRobAcc %.4f \t AdaTestLoss=%.4f AdaTestAcc %.4f' %
                         (0, adda_times, (int(base_attack_step * adda_times)), (epsilon*255),
