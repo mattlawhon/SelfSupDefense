@@ -976,71 +976,77 @@ def main():
             contrastive_attack_loss = 0
             contrastive_clean_loss = 0
 
-            # Standard Adversarial Attack Generation
-            for i, batch in enumerate(test_batches):
-                if args.debug and i > 0:
-                    break
+            if not os.path.isfile('testx.pt'):
+                # Standard Adversarial Attack Generation
+                for i, batch in enumerate(test_batches):
+                    if args.debug and i > 0:
+                        break
 
-                X, y = batch['input'], batch['target']
-                TestX.append(X)
-                TestY.append(y)
+                    X, y = batch['input'], batch['target']
+                    TestX.append(X)
+                    TestY.append(y)
 
-                if torch.cuda.is_available():
-                    X = X.cuda()
-                    y = y.cuda()
+                    if torch.cuda.is_available():
+                        X = X.cuda()
+                        y = y.cuda()
 
-                if args.attack_type == 'CW':
-                    delta = attack_CW(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
-                                       early_stop=args.eval)
-                elif args.attack_type == 'adapt':
-                    delta = adaptive_attack_pgd(model, X, y, c_head_model, rotation_model, ip_model, scripted_transforms, criterion,
-                                                epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
-                                       early_stop=args.eval, lambda_S=lambda_S)
-                elif args.attack_type == 'BIM': 
-                    delta = attack_BIM(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
-                                       early_stop=args.eval)
-                else:
-                    delta = attack_pgd(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
+                    if args.attack_type == 'CW':
+                        delta = attack_CW(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
                                            early_stop=args.eval)
-                delta = delta.detach()
-                Testdelta.append(delta)
+                    elif args.attack_type == 'adapt':
+                        delta = adaptive_attack_pgd(model, X, y, c_head_model, rotation_model, ip_model, scripted_transforms, criterion,
+                                                    epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
+                                           early_stop=args.eval, lambda_S=lambda_S)
+                    elif args.attack_type == 'BIM': 
+                        delta = attack_BIM(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
+                                           early_stop=args.eval)
+                    else:
+                        delta = attack_pgd(model, X, y, epsilon, pgd_alpha, args.attack_iters, args.restarts, args.norm,
+                                               early_stop=args.eval)
+                    delta = delta.detach()
+                    Testdelta.append(delta)
 
-                with torch.no_grad():
-                    robust_output, _ = model(
-                        normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)))
-                    output, _ = model(normalize(X))
+                    with torch.no_grad():
+                        robust_output, _ = model(
+                            normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)))
+                        output, _ = model(normalize(X))
 
-                    robust_loss = criterion(robust_output, y)
-                    loss = criterion(output, y)
+                        robust_loss = criterion(robust_output, y)
+                        loss = criterion(output, y)
 
-                    Adv_image = torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)
-                    contrastive_attack = \
-                        calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4)
-                    contrastive_clean = \
-                        calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4)
+                        Adv_image = torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)
+                        contrastive_attack = \
+                            calculate_contrastive_Mhead_loss(Adv_image, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4)
+                        contrastive_clean = \
+                            calculate_contrastive_Mhead_loss(X, scripted_transforms, model, criterion, c_head_model, rotation_model, ip_model, n_views=4)
 
-                contrastive_attack_loss += contrastive_attack.item() * y.size(0)
-                contrastive_clean_loss += contrastive_clean.item() * y.size(0)
+                    contrastive_attack_loss += contrastive_attack.item() * y.size(0)
+                    contrastive_clean_loss += contrastive_clean.item() * y.size(0)
 
-                test_robust_loss += robust_loss.item() * y.size(0)
-                test_robust_acc += (robust_output.max(1)[1] == y).sum().item()
-                test_loss += loss.item() * y.size(0)
-                test_acc += (output.max(1)[1] == y).sum().item()
-                test_n += y.size(0)
-                torch.cuda.empty_cache()
-                # print("test_robust_acc", test_robust_acc/test_n, "test_acc", test_acc/test_n)
+                    test_robust_loss += robust_loss.item() * y.size(0)
+                    test_robust_acc += (robust_output.max(1)[1] == y).sum().item()
+                    test_loss += loss.item() * y.size(0)
+                    test_acc += (output.max(1)[1] == y).sum().item()
+                    test_n += y.size(0)
+                    torch.cuda.empty_cache()
+                    # print("test_robust_acc", test_robust_acc/test_n, "test_acc", test_acc/test_n)
 
-                print(f'Attacked Accuracy: {round(test_robust_acc/test_n, 3)}, Clean Accuracy: {round(test_acc/test_n, 3)}')
-
-
-            print('clean contrastive=%.6f \t adv contrastive=%.6f' %
-                                ((contrastive_clean_loss / test_n), (contrastive_attack_loss / test_n)))
+                    print(f'Attacked Accuracy: {round(test_robust_acc/test_n, 3)}, Clean Accuracy: {round(test_acc/test_n, 3)}')
 
 
-            TestX = torch.cat(TestX, dim=0)
-            TestY = torch.cat(TestY, dim=0)
-            Testdelta = torch.cat(Testdelta, dim=0)
+                print('clean contrastive=%.6f \t adv contrastive=%.6f' %
+                                    ((contrastive_clean_loss / test_n), (contrastive_attack_loss / test_n)))
 
+
+                TestX = torch.cat(TestX, dim=0)
+                TestY = torch.cat(TestY, dim=0)
+                Testdelta = torch.cat(Testdelta, dim=0)
+                
+            else:
+                TestY = torch.load('testy.pt', map_location = device)
+                TestX = torch.load('testx.pt', map_location = device)
+                Testdelta = torch.load('testd.pt', map_location = device)
+                
             total_len = TestX.shape[0]
             ind = [i for i in range(total_len)]
             from random import shuffle
@@ -1057,9 +1063,13 @@ def main():
             count_test = 0
 
             # Start Reverse Attacks.
-            Base_atack_steps = [20]
-            for base_attack_step in Base_atack_steps: # 10, 15, 20, 10, 15, used to be 20
+            # Base_atack_steps = [20]
+            # for base_attack_step in Base_atack_steps: # 10, 15, 20, 10, 15, used to be 20
+            base_attack_step = 20
+            #for base_attack_step in Base_atack_steps: # 10, 15, 20, 10, 15, used to be 20
+            for epsilon in [4, 6, 8, 10, 12, 16]:
                 for adda_times in [2]:
+                    epsilon = epsilon/255.0
                     test_robust_ada_acc = 0
                     test_clean_ada_acc = 0
                     test_robust_ada_loss = 0
