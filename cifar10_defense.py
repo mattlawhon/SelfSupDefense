@@ -115,19 +115,20 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         g1 = grad1
         x = X
 #         loss = (closs.item() + rloss.item() + iloss.item())
-
+        
+        print(f'{i}, closs:{closs.item()}) 
         d = torch.clamp(d + alpha *F.normalize(g1, p=float('inf'))*(closs.item()/3), min=-epsilon, max=epsilon)
         if i%2 == 1:
             rloss.backward()
             grad2 = delta2.grad.detach()
             g2 = grad2
-            
+            print(f'{i}, rloss:{rloss.item()}) 
             d = torch.clamp(d + alpha *F.normalize(g2, p=float('inf'))*(rloss.item()/3), min=-epsilon, max=epsilon)
         else:
             iloss.backward()
             gradsu = deltasu.grad.detach()
             g3 = downsample(gradsu)
-            
+            print(f'{i}, iloss:{iloss.item()}) 
             d = torch.clamp(d + alpha *F.normalize(g3, p=float('inf'))*(iloss.item()/3), min=-epsilon, max=epsilon)
         #d = torch.clamp(d + alpha *torch.mean(torch.stack([torch.sign(g1), torch.sign(g2), torch.sign(g3)]), dim = 0), min=-epsilon, max=epsilon)
         
