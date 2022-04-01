@@ -134,12 +134,18 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         d = clamp(d, lower_limit - x, upper_limit - x)
 
         delta1.data = d
-        delta2.data = d
-        deltasu.data = torch.repeat_interleave(torch.repeat_interleave(d, 4, dim=2), 4, dim=3)
-
         delta1.grad.zero_()
-        delta2.grad.zero_()
-        deltasu.grad.zero_()
+        
+        if i%2 == 1:
+            delta2.data = d
+            delta2.grad.zero_()
+        
+        else:
+            deltasu.data = torch.repeat_interleave(torch.repeat_interleave(d, 4, dim=2), 4, dim=3)
+            deltasu.grad.zero_()
+
+        
+        
     max_delta = delta1.detach()
     return max_delta
 
