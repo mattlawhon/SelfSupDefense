@@ -85,6 +85,8 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
     downsample = nn.Conv2d(3, 3, 4, stride=4).cuda()
 
     for i in range(40):
+        if i % 5 == 0:
+            print(i)
         X1 = X + delta1
         X2 = X + delta2
         X3 = Xsu + deltasu
@@ -114,22 +116,22 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
         d = delta1
         g1 = grad1
         x = X
-#         loss = (closs.item() + rloss.item() + iloss.item())
+        loss = (closs.item() + rloss.item() + iloss.item())
         
-        print(f'{i}, closs:{closs.item()}') 
-        d = torch.clamp(d + alpha *F.normalize(g1, p=float('inf'))*(closs.item()/3), min=-epsilon, max=epsilon)
+        #print(f'{i}, closs:{closs.item()}') 
+        d = torch.clamp(d + alpha *F.normalize(g1, p=float('inf'))*(closs.item()/loss), min=-epsilon, max=epsilon)
         if i%2 == 1:
             rloss.backward()
             grad2 = delta2.grad.detach()
             g2 = grad2
-            print(f'{i}, rloss:{rloss.item()}') 
-            d = torch.clamp(d + alpha *F.normalize(g2, p=float('inf'))*(rloss.item()/3), min=-epsilon, max=epsilon)
+            #print(f'{i}, rloss:{rloss.item()}') 
+            d = torch.clamp(d + alpha *F.normalize(g2, p=float('inf'))*(rloss.item()/loss), min=-epsilon, max=epsilon)
         else:
             iloss.backward()
             gradsu = deltasu.grad.detach()
             g3 = downsample(gradsu)
-            print(f'{i}, iloss:{iloss.item()}') 
-            d = torch.clamp(d + alpha *F.normalize(g3, p=float('inf'))*(iloss.item()/3), min=-epsilon, max=epsilon)
+            #print(f'{i}, iloss:{iloss.item()}') 
+            d = torch.clamp(d + alpha *F.normalize(g3, p=float('inf'))*(iloss.item()/loss), min=-epsilon, max=epsilon)
         #d = torch.clamp(d + alpha *torch.mean(torch.stack([torch.sign(g1), torch.sign(g2), torch.sign(g3)]), dim = 0), min=-epsilon, max=epsilon)
         
         d = clamp(d, lower_limit - x, upper_limit - x)
