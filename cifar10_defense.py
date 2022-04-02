@@ -85,8 +85,6 @@ def attack_constrastive_Mhead(model, model_ssl, rot, cont, scripted_transforms, 
     downsample = nn.Conv2d(3, 3, 4, stride=4).cuda()
 
     for i in range(40):
-        if i % 5 == 0:
-            print(i)
         X1 = X + delta1
         X2 = X + delta2
         X3 = Xsu + deltasu
